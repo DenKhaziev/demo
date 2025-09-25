@@ -1,0 +1,10 @@
+{
+    "montserrat": {
+        "normal": "\/var\/www\/resources\/fonts\/\/montserrat_normal_861558d3c01403c48c37a12645c5f828",
+        "bold": "montserrat_bold_2a5b28b51f040d4d02e090f490a08075"
+    },
+    "timesnewroman": {
+        "bold": "\/var\/www\/resources\/fonts\/\/timesnewroman_bold_c1515fccf8279f4aa89a9fdf0b7bc186",
+        "normal": "timesnewroman_normal_aa73cfe987a76ee1b7f77e6dc368876c"
+    }
+}

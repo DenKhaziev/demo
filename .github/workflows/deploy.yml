@@ -1,0 +1,111 @@
+# name: Deploy to Production
+
+# on:
+#   push:
+#     branches:
+#       - main
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Setup SSH
+#         uses: webfactory/ssh-agent@v0.9.0
+#         with:
+#           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+#       - name: Deploy to server
+#         run: |
+#           ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+#             set -e
+
+#             cd ${{ secrets.SSH_PATH }}
+
+#             # 🔐 Сохраняем .env.production и Dockerfile перед очисткой (если они есть)
+#             [ -f .env.production ] && cp .env.production /tmp/env.production.bak || true
+#             [ -f _docker/node/Dockerfile ] && mkdir -p /tmp/_docker/node && cp _docker/node/Dockerfile /tmp/_docker/node/Dockerfile || true
+
+#             # 💥 Чистим, но не трогаем .env и docker
+#             git reset --hard HEAD
+#             git clean -fd -e .env.production -e _docker/ -e certbot/
+
+#             git pull origin main
+
+#             # 🔁 Восстанавливаем, если что-то исчезло
+#             [ -f /tmp/env.production.bak ] && cp /tmp/env.production.bak .env.production || true
+#             [ -f /tmp/_docker/node/Dockerfile ] && cp /tmp/_docker/node/Dockerfile _docker/node/Dockerfile || true
+
+#             # 🧱 Сборка фронта
+#             docker build -f _docker/node/Dockerfile -t penaty-assets .
+#             docker create --name temp-assets penaty-assets
+#             docker cp temp-assets:/app/public/build ./public/
+#             docker rm temp-assets
+
+#             # 🚀 Перезапуск контейнеров
+#             docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+#             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#           EOF
+
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Deploy to server
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
+          set -e
+
+          cd ${{ secrets.SSH_PATH }}
+          git reset --hard HEAD
+          git clean -fd -e .env -e certbot/ -e storage/ -e node_modules/ -e vendor/
+          git pull origin main
+
+          # 1) Сборка фронта в отдельном node-образе и копирование build
+          docker build -f _docker/node/Dockerfile -t penaty-assets .
+          docker create --name temp-assets penaty-assets
+          docker cp temp-assets:/app/public/build ./public/
+          docker rm temp-assets
+
+          # 2) Префлайт composer в одноразовом контейнере (НЕ трогаем текущий app)
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm app \
+            sh -lc "composer validate && composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader --dry-run"
+
+          # 3) (Опционально) установим зависимости сразу (ускорит старт app)
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm app \
+            sh -lc "composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader && php artisan storage:link || true"
+
+          # 4) Роллим контейнеры (если надо — с ребилдом)
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+
+
+          # 5) Прогреем кэши и миграции уже в поднятом app
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T app \
+            sh -lc "php artisan migrate --force && php artisan optimize:clear && php artisan optimize"
+
+
+          echo '✅ Deploy done.'
+          EOF
+
+
+

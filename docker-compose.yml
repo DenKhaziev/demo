@@ -1,0 +1,97 @@
+# 📦 Общий файл: docker-compose.yml
+
+
+services:
+    nginx:
+        image: nginx:latest
+        container_name: project_nginx
+        volumes:
+            - ./:/var/www
+        ports:
+            - "9090:80"
+        restart: unless-stopped
+        depends_on:
+            - php
+            - app
+
+    php:
+        image: php:8.3-fpm
+        container_name: project_php
+        volumes:
+            - ./:/var/www
+            - ./storage:/var/www/storage
+            - ./public:/var/www/public
+        environment:
+            PHP_MEMORY_LIMIT: 256M
+        restart: unless-stopped
+        depends_on:
+            - db
+
+    app:
+        build:
+            context: .
+            dockerfile: _docker/app/Dockerfile
+        container_name: project_app
+        volumes:
+            - ./:/var/www
+            - ./_docker/php/99-upload.ini:/usr/local/etc/php/conf.d/99-upload.ini:ro
+        restart: unless-stopped
+        depends_on:
+            - db
+        command: sh -c "composer install --no-dev --optimize-autoloader && php artisan storage:link && php-fpm"
+
+
+
+    db:
+        image: mysql:8.0
+        container_name: project_db
+        volumes:
+            - ./tmp/db:/var/lib/mysql
+        environment:
+            MYSQL_DATABASE: so_penaty_db
+            MYSQL_ROOT_PASSWORD: root
+        ports:
+            - "9091:3306"
+        restart: always
+
+    phpmyadmin:
+        image: phpmyadmin/phpmyadmin
+        container_name: project_phpmyadmin
+        environment:
+            PMA_PORT: 3306
+            PMA_HOST: db
+            MYSQL_ROOT_PASSWORD: root
+        depends_on:
+            - db
+        ports:
+            - "3001:80"
+        restart: unless-stopped
+
+    reverb:
+        build:
+            context: .
+            dockerfile: _docker/app/Dockerfile
+        container_name: project_reverb
+        volumes:
+            - ./:/var/www
+        environment:
+            APP_ENV: local
+            APP_KEY: base64:6CoyDCnx2U1a4SmJryNI+VkItYaUv5kKXbpBow7hTNw=
+            DB_CONNECTION: mysql
+            DB_HOST: db
+            DB_PORT: 3306
+            DB_DATABASE: so_penaty_db
+            DB_USERNAME: root
+            DB_PASSWORD: root
+            REVERB_APP_ID: default
+            REVERB_APP_KEY: local
+            REVERB_APP_SECRET: local
+            REVERB_HOST: 0.0.0.0
+            REVERB_PORT: 8080
+            REVERB_SCHEME: http
+        depends_on:
+            - db
+        ports:
+            - "8085:8080"
+        command: sh -c "sleep 10 && php artisan reverb:start"
+        restart: unless-stopped

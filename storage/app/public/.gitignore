@@ -1,0 +1,7 @@
+documents/*
+!documents/.gitkeep
+
+certificates/*
+!certificates/.gitkeep
+
+.DS_Store
